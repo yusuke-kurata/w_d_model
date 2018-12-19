@@ -34,7 +34,6 @@ from official.utils.misc import model_helpers
 LOSS_PREFIX = {'wide': 'linear/', 'deep': 'dnn/'}
 
 
-# 色々定義してるけど、とりあえず読み飛ばし
 def define_wide_deep_flags():
   """Add supervised learning flags, as well as wide-deep model type."""
   flags_core.define_base()
@@ -80,10 +79,6 @@ def export_model(model, model_type, export_dir, model_column_fn):
 
 def run_loop(name, train_input_fn, eval_input_fn, model_column_fn,
              build_estimator_fn, flags_obj, tensors_to_log, early_stop=False):
-
-  tf.logging.info("-------------学習用データ↓")
-  tf.logging.info(train_input_fn)
-  tf.logging.info("------------データ表示終了")
 
   """Define training loop."""
   model_helpers.apply_clean(flags.FLAGS)
