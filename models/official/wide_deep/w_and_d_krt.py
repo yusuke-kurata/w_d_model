@@ -6,28 +6,35 @@ import copy
 import tensorflow as tf
 import numpy as np
 
-TPRO_TRAIN = "tpro_train2.csv"
-TPRO_TEST = "tpro_test2.csv"
+from tensorflow.python.client import device_lib
+device_lib.list_local_devices()
 
-#データ読み込み用のメソッド作成
-def read_file(file_name):
-    classVal = pd.read_csv(file_name, usecols = ['classVal'])
-    holiday_flag = pd.read_csv(file_name, usecols = ['holiday_flag'])
-    time_zone = pd.read_csv(file_name, usecols = ['time_zone'])
-    receipt_id = pd.read_csv(file_name, usecols = ['receipt_id'])
-    weather = pd.read_csv(file_name, usecols = ['weather'])
-    num = pd.read_csv(file_name, usecols = ['num'])
-    price = pd.read_csv(file_name, usecols = ['price'])
-    v1 = pd.read_csv(file_name, usecols = ['v1'])
-    v2 = pd.read_csv(file_name, usecols = ['v2'])
-    v3 = pd.read_csv(file_name, usecols = ['v3'])
-    
-    label = pd.read_csv(file_name, usecols = ['item_id'])
-    return classVal.values, holiday_flag.values, time_zone.values, receipt_id.values, weather.values, num.values, price.values, v1.values, v2.values, v3.values, label.values
+# 読み込みファイル指定
+# column名はデータ読み込み後に付与
+TPRO_TRAIN = "tpro_train_noImg.csv"
+TPRO_TEST = "tpro_test_noImg.csv"
+MODEL_DIR = "./tpro_model_NoImage5"
 
-#データ読み込み
-classVal_tra, holiday_flag_tra, time_zone_tra, receipt_id_tra, weather_tra, num_tra, price_tra, v1_tra, v2_tra, v3_tra, training_y= read_file(TPRO_TRAIN)
-classVal_tes, holiday_flag_tes, time_zone_tes, receipt_id_tes, weather_tes, num_tes, price_tes, v1_tes, v2_tes, v3_tes, test_y = read_file(TPRO_TEST)
+df_all = pd.read_csv(TPRO_TRAIN)
+df_test_all = pd.read_csv(TPRO_TEST)
+## 画像特徴量のrename
+
+
+df_all.columns = ['classVal', 'holiday_flag', 'time_zone', 'receipt_id', 'weather', 'item_id', 'num', 'price'] + \
+                 ['v'+str(i+1) for i in range(len(df_all.iloc[:,8:].columns))]
+
+print("------------columns------------")
+print(df_all.columns)
+print("------------vector num------------")
+print(len(df_all.iloc[:,8:].columns))
+
+df_test_all.columns = ['classVal', 'holiday_flag', 'time_zone', 'receipt_id', 'weather', 'item_id', 'num', 'price'] + \
+                 ['v'+str(i+1) for i in range(len(df_all.iloc[:,8:].columns))]
+
+
+# ターゲットの設定
+training_y = df_all['item_id']
+test_y = df_test_all['item_id']
 
 train_y_label = pd.DataFrame(training_y, columns = ["item_id"])
 label_list = train_y_label.groupby("item_id").count().index
@@ -40,16 +47,25 @@ for i, label in enumerate(label_list): label_dict[label] = i
 relocate_train_y = copy.deepcopy(training_y)
 relocate_test_y = copy.deepcopy(test_y)
 
-# applyはこの段階ではもう使えない
-# relocate_train_y.apply(lambda x: label_dict[x].values)
 for i in range(len(relocate_train_y)):
-    relocate_train_y[i] = label_dict[training_y[i][0]]
+    relocate_train_y[i] = label_dict[training_y[i]]
 
 for i in range(len(relocate_test_y)):
-    relocate_test_y[i] = label_dict[test_y[i][0]]
+    relocate_test_y[i] = label_dict[test_y[i]]
 
 
-# featureのデータ型の指定
+# 使用する特徴量の設定
+# feature_x：item_id以外の全column
+feature_x = {}
+feature_test_x = {}
+col_list = df_all.columns.drop('item_id')
+
+f_tra_tmp = df_all.drop('item_id', axis=1)
+f_tes_tmp = df_test_all.drop('item_id', axis=1)
+
+for i in col_list:
+    feature_x[i] = f_tra_tmp[i]
+    feature_test_x[i] = f_tes_tmp[i]
 
 classVal = tf.feature_column.categorical_column_with_vocabulary_list(
   'classVal', [
@@ -74,69 +90,72 @@ num = tf.feature_column.numeric_column("num", shape=[1])
 
 price = tf.feature_column.numeric_column("price", shape=[1])
 
-v1 = tf.feature_column.numeric_column("v1", shape=[1])
+v = []
+# for i in range(0, 3):
+for i in range(0, len(df_all.iloc[:,8:].columns)):
+    v.append(tf.feature_column.numeric_column("v"+str(i+1), shape=[1]))
 
-v2 = tf.feature_column.numeric_column("v2", shape=[1])
+w_col1 = [classVal, holiday_flag, time_zone, receipt_id,
+                weather, num, price]
 
-v3 = tf.feature_column.numeric_column("v3", shape=[1])
-base_columns = [
-  classVal, holiday_flag, time_zone, receipt_id,
-  weather, num, price, v1, v2, v3
-]
+w_col2 = []
+d_col2 = []
+for i in range(0, len(df_all.iloc[:,8:].columns)):
+    w_col2.append(v[i])
+    d_col2.append(v[i])
 
-wide_columns = base_columns
-# wide_columns = base_columns + crossed_columns
-
-deep_columns =  [tf.feature_column.indicator_column(classVal), 
+d_col1 =  [tf.feature_column.indicator_column(classVal), 
                     tf.feature_column.indicator_column(holiday_flag), 
                     tf.feature_column.indicator_column(time_zone), 
                     receipt_id,
                     tf.feature_column.indicator_column(weather), 
                     num, 
-                    price, 
-                    v1, 
-                    v2, 
-                    v3]
+                    price]
 
+wide_columns = w_col1
+# wide_columns = base_columns + crossed_columns
+deep_columns = d_col1 + d_col2
+# deep_columns = d_col1
+
+print("--------------wide_columns--------------")
+# print(wide_columns)
+print("--------------deep_columns--------------")
+# print(deep_columns)
+                    
 # モデルの設定
-# classifier = tf.estimator.DNNClassifier(feature_columns=feature_columns,
-#                                         hidden_units=[10, 20, 10],
-#                                         n_classes=CLASS_NUM,
-#                                         model_dir="./tpro_model")
-
 classifier = tf.estimator.DNNLinearCombinedClassifier(
-    n_classes=CLASS_NUM,
-    model_dir="./tpro_model",
+    n_classes = CLASS_NUM,
+    model_dir = MODEL_DIR,
 
-    linear_feature_columns=wide_columns,
-    dnn_feature_columns=deep_columns,
-    dnn_hidden_units=[10, 20, 10],
-    # config=run_config
+    linear_feature_columns = wide_columns,
+    dnn_feature_columns = deep_columns,
+    dnn_hidden_units = [1000, 200, 50],
+    # config = run_config
     )
 
 
 # 学習用データ(辞書)を返す関数の作成
 train_input_fn = tf.estimator.inputs.numpy_input_fn(
-    x={"classVal": np.array(classVal_tra), "holiday_flag": np.array(holiday_flag_tra),  "time_zone": np.array(time_zone_tra),  
-       "receipt_id": np.array(receipt_id_tra),  "weather": np.array(weather_tra),
-       "num": np.array(num_tra),  "price": np.array(price_tra),  "v1": np.array(v1_tra),  "v2": np.array(v2_tra),  "v3": np.array(v3_tra)},
-    y=np.array(relocate_train_y),
-    num_epochs=None,
-    shuffle=True)
+    x = feature_x,
+    y = np.array(relocate_train_y),
+    num_epochs = 1,
+    shuffle = True)
 
 # 学習の実行。stepsを分割して実行しても同様の結果を得られる
-classifier.train(input_fn=train_input_fn, steps=200000)
+classifier.train(input_fn=train_input_fn, steps=100)
 
 # 評価用データ(辞書)を返す関数の作成
 test_input_fn = tf.estimator.inputs.numpy_input_fn(
-    x={"classVal": np.array(classVal_tes), "holiday_flag": np.array(holiday_flag_tes),  "time_zone": np.array(time_zone_tes),  
-       "receipt_id": np.array(receipt_id_tes), "weather": np.array(weather_tes), 
-       "num": np.array(num_tes),  "price": np.array(price_tes),  "v1": np.array(v1_tes),  "v2": np.array(v2_tes),  "v3": np.array(v3_tes)},
-    y=np.array(relocate_test_y),
-    num_epochs=1,
-    shuffle=False)
+    x = feature_test_x,
+    y = np.array(relocate_test_y),
+    num_epochs = 1,
+    shuffle = False)
 
 # 評価
-accuracy_score = classifier.evaluate(input_fn=test_input_fn)["accuracy"]
+# accuracy_score = classifier.evaluate(input_fn=test_input_fn)["accuracy"]
+accuracy_score = classifier.evaluate(input_fn=test_input_fn)
 
-print("\nTest Accuracy: {0:f}\n".format(accuracy_score))
+
+print("Test Accuracy: {0:f}\n".format(accuracy_score["accuracy"]))
+print("Test loss: {0:f}\n".format(accuracy_score["loss"]))
+print("Test average_loss: {0:f}\n".format(accuracy_score["average_loss"]))
