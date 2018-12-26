@@ -18,8 +18,6 @@ MODEL_DIR = "./tpro_model_NoImage5"
 df_all = pd.read_csv(TPRO_TRAIN)
 df_test_all = pd.read_csv(TPRO_TEST)
 ## 画像特徴量のrename
-
-
 df_all.columns = ['classVal', 'holiday_flag', 'time_zone', 'receipt_id', 'weather', 'item_id', 'num', 'price'] + \
                  ['v'+str(i+1) for i in range(len(df_all.iloc[:,8:].columns))]
 
